@@ -32,6 +32,7 @@ No World Bank authentication, database, frontend, or deployment is involved.
 - [Example questions and outputs](#example-questions-and-outputs)
 - [Tests](#tests)
 - [Project layout](#project-layout)
+- [How this was built](#how-this-was-built)
 - [Design notes and limitations](#design-notes-and-limitations)
 
 ---
@@ -49,7 +50,6 @@ No World Bank authentication, database, frontend, or deployment is involved.
 | `scripts/smoke_test.py` | Manual live smoke test of the MCP tools without an LLM key |
 | `requirements.txt` | Pinned dependency ranges |
 | `.env.example` | Environment variable template |
-| `docs/presentation/` | Slide deck (PPTX + PDF) explaining the project, with captured terminal outputs |
 
 ---
 
@@ -862,6 +862,41 @@ world-bank-mcp/
 
 ---
 
+## How this was built
+
+The work followed the order the task suggested: server first, then the agent,
+then hardening.
+
+1. **Server first, tested without an LLM.** The four tools were written against
+   the live World Bank API and exercised directly with `scripts/smoke_test.py`
+   and the MCP Inspector, so the tool layer was correct before any model was
+   involved.
+2. **Descriptions written for the model, not the reader.** Each docstring states
+   when to use the tool, what every argument means, and what the result
+   contains, because the LLM reads those descriptions to choose a tool.
+3. **The agent loop was built against a test double.** A local
+   OpenAI-compatible server stood in for the remote model, so the loop could be
+   checked deterministically: MCP-to-function schema conversion, assistant
+   `tool_calls` retention, `tool_call_id` correlation, and the multi-round
+   message history.
+4. **API quirks were discovered empirically.** Zero-result `topic_exact` queries,
+   region names passed as countries, GUID-versus-ID lookups and the API's
+   ISO-date requirement were all found by querying the live API, then handled in
+   the server and reported in the tool result's `notes` field.
+5. **Hardening came from a real failure.** The first live Groq runs died with an
+   opaque `ExceptionGroup`; unwrapping it revealed a `413 Request too large` from
+   the free tier's 8,000 TPM cap. That produced the token budget, the
+   tool-result slimming, and the 413/429 retry path.
+6. **Tests were written alongside the code.** The offline suite mocks HTTP, the
+   MCP session and the LLM, so it runs with no network and no API key; the live
+   integration tests are opt-in via `RUN_WB_INTEGRATION=1`.
+
+Built with Python 3.12, FastMCP, the MCP Python SDK, the Groq Python SDK, HTTPX,
+Pydantic and pytest. A slide deck summarising the project lives in
+[`docs/presentation/`](docs/presentation/).
+
+---
+
 ## Design notes and limitations
 
 - **The MCP server is the unit of reuse.** The client knows nothing about the
@@ -886,3 +921,9 @@ world-bank-mcp/
   risk; a different Groq model can be selected with `--model` if desired.
 - **No streaming, persistence, or UI.** These were explicitly out of scope for
   the task.
+
+---
+
+## License
+
+Released under the MIT License. See [`LICENSE`](LICENSE).
